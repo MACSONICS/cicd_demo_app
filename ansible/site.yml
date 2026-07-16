@@ -1,0 +1,88 @@
+---
+- name: Deploy Node Application
+
+  hosts: web
+
+  become: true
+
+  tasks:
+
+    - name: Install NodeJS
+      dnf:
+        name: nodejs
+        state: present
+
+    - name: Install Nginx
+      dnf:
+        name: nginx
+        state: present
+
+    - name: Create app directory
+      file:
+        path: /opt/nodeapp
+        state: directory
+        mode: "0755"
+
+    - name: Copy application
+      copy:
+        src: ../app/
+        dest: /opt/nodeapp/
+
+    - name: Install dependencies
+      command: npm install
+      args:
+        chdir: /opt/nodeapp
+
+    - name: Create systemd service
+      copy:
+        dest: /etc/systemd/system/nodeapp.service
+        content: |
+          [Unit]
+          Description=Node Demo App
+          After=network.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory=/opt/nodeapp
+          ExecStart=/usr/bin/node server.js
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: true
+
+    - name: Start application
+      systemd:
+        name: nodeapp
+        enabled: true
+        state: restarted
+
+    - name: Wait for node app
+      wait_for:
+        port: 3000
+        timeout: 60
+
+    - name: Verify health endpoint
+      uri:
+        url: http://localhost:3000/health
+        status_code: 200
+
+    - name: Deploy nginx config
+      template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/conf.d/nodeapp.conf
+
+    - name: Enable nginx
+      service:
+        name: nginx
+        enabled: true
+        state: restarted
+
+    - name: Verify web endpoint
+      uri:
+        url: http://localhost
+        status_code: 200
